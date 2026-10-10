@@ -46,6 +46,14 @@ div[data-testid="stMetricValue"], div[data-testid="stMetricValue"] div, div[data
 .result-price { color:#173553; font-family:'Manrope',sans-serif; font-size:clamp(2.2rem,4vw,3.25rem); line-height:1.25; font-weight:800; letter-spacing:-.04em; }
 .result-sub { color:#60758a; font-size:.85rem; margin-top:.25rem; }
 .footer-line { border-top:1px solid #dce5ef; margin-top:2rem; padding-top:1rem; color:#8290a1; font-size:.8rem; }
+.estimate-card { position:sticky; top:1rem; background:#fff; border:1px solid #cddce8; border-radius:20px; padding:1.45rem; box-shadow:0 12px 30px rgba(21,38,59,.07); }
+.estimate-eyebrow { color:#60758a; font-size:.78rem; font-weight:800; letter-spacing:.17em; margin-bottom:1.25rem; }
+.estimate-price { color:#173553; font-family:'Manrope',sans-serif; font-size:clamp(2.15rem,3.2vw,3.2rem); font-weight:800; letter-spacing:-.045em; line-height:1.15; overflow-wrap:anywhere; }
+.estimate-pill { display:inline-block; margin-top:.65rem; padding:.38rem .75rem; color:#176e70; background:#e7f6f3; border-radius:999px; font-size:.78rem; font-weight:700; }
+.estimate-note { color:#60758a; font-size:.88rem; line-height:1.65; margin-top:1.25rem; }
+.estimate-divider { border-top:1px solid #dce5ef; margin:1.45rem 0; }
+.estimate-placeholder { background:linear-gradient(110deg,#eaf2fb 0%,#e7f6f3 100%); border:1px solid #d5e5eb; border-radius:14px; padding:1.15rem; color:#52677d; font-weight:600; line-height:1.55; }
+@media (max-width:900px) { .estimate-card { position:static; } }
 @media (max-width:760px) { .hero { padding:1.5rem; } .hero-art { display:none; } .section-card { padding:1rem .9rem .5rem; } }
 </style>
 <div class="hero">
@@ -137,13 +145,32 @@ def select_index(column, preferred):
                 return i
     return 0
 
-with st.container():
+def select_index_from_list(vals, preferred):
+    for item in preferred:
+        for i, val in enumerate(vals):
+            if str(val).lower() == item.lower():
+                return i
+    return 0
+
+# Two-column workspace keeps the estimate beside the inputs on desktop.
+left_panel, right_panel = st.columns([1.85, 1], gap="large")
+
+with left_panel:
     st.markdown('<div class="section-card"><div class="section-heading"><div class="section-number">01</div><div><h3>Vehicle profile</h3><p>Core details that influence resale value</p></div></div>', unsafe_allow_html=True)
     c1, c2, c3 = st.columns(3)
     with c1:
-        make = st.selectbox("Make / brand", choices("make"), index=select_index("make", ["maruti"]), format_func=display_value)
-        model_name = st.selectbox("Model", choices("model"), index=select_index("model", ["swift"]), format_func=display_value)
-        variant = st.selectbox("Variant", choices("variant"), format_func=display_value)
+        make_options = choices("make")
+        make = st.selectbox("Make / brand", make_options, index=select_index("make", ["maruti"]), format_func=display_value, key="make_choice")
+        model_options = filtered_choices("model", {"make": make})
+        if not model_options:
+            model_options = choices("model")
+        model_name = st.selectbox("Model", model_options, index=select_index_from_list(model_options, ["swift"]), format_func=display_value, key=f"model_choice_{make}")
+        variant_options = filtered_choices("variant", {"make": make, "model": model_name})
+        if not variant_options:
+            variant_options = filtered_choices("variant", {"model": model_name})
+        if not variant_options:
+            variant_options = choices("variant")
+        variant = st.selectbox("Variant", variant_options, format_func=display_value, key=f"variant_choice_{make}_{model_name}")
         fuel_type = st.selectbox("Fuel type", choices("fuel_type"), format_func=display_value)
     with c2:
         body_type = st.selectbox("Body type", choices("body_type"), format_func=display_value)
@@ -160,28 +187,17 @@ with st.container():
     st.markdown('<div class="section-card"><div class="section-heading"><div class="section-number">02</div><div><h3>Location & listing</h3><p>Registration and listing context</p></div></div>', unsafe_allow_html=True)
     d1, d2, d3 = st.columns(3)
     with d1:
-        registered_state = st.selectbox(
-            "Registration state", choices("registered_state"),
-            index=select_index("registered_state", ["gujarat"]),
-            format_func=display_value, key="registered_state"
-        )
+        registered_state = st.selectbox("Registration state", choices("registered_state"), index=select_index("registered_state", ["gujarat"]), format_func=display_value, key="registered_state")
         registration_cities = filtered_choices("registered_city", {"registered_state": registered_state})
         if not registration_cities:
             st.warning("No registration cities are available for this state in the training dataset.")
             registration_cities = ["Unknown"]
-        registered_city = st.selectbox(
-            "Registration city", registration_cities,
-            format_func=display_value, key=f"registered_city_{registered_state}"
-        )
+        registered_city = st.selectbox("Registration city", registration_cities, format_func=display_value, key=f"registered_city_{registered_state}")
         state_rtos = filtered_choices("rto", {"registered_state": registered_state})
         if not state_rtos:
             st.warning("No RTO codes are available for this state in the training dataset.")
             state_rtos = ["Unknown"]
-        rto = st.selectbox(
-            "RTO code", state_rtos,
-            format_func=lambda value: display_value(value, "rto"),
-            key=f"rto_{registered_state}"
-        )
+        rto = st.selectbox("RTO code", state_rtos, format_func=lambda value: display_value(value, "rto"), key=f"rto_{registered_state}")
     with d2:
         city = st.selectbox("Listing city", choices("city"), format_func=display_value)
         source = st.selectbox("Listing source", choices("source"), format_func=display_value)
@@ -190,39 +206,49 @@ with st.container():
         ad_month = st.selectbox("Listing month", list(range(1, 13)), index=3, format_func=lambda x: pd.Timestamp(2024, x, 1).strftime("%B"))
         ad_dayofweek = st.selectbox("Listing weekday", list(range(7)), index=2, format_func=lambda x: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"][x])
     st.markdown('</div>', unsafe_allow_html=True)
-
     submitted = st.button("Calculate estimated value  →", type="primary", use_container_width=True)
 
-if submitted:
-    input_data = pd.DataFrame([{
-        "fuel_type": fuel_type, "kms_run": int(kms_run), "city": city,
-        "body_type": body_type, "transmission": transmission, "variant": variant,
-        "assured_buy": int(assured_buy), "registered_city": registered_city,
-        "registered_state": registered_state, "rto": rto, "source": source,
-        "make": make, "model": model_name, "total_owners": int(total_owners),
-        "fitness_certificate": float(fitness_certificate), "warranty_avail": int(warranty_avail),
-        "ad_year": float(ad_year), "ad_month": float(ad_month),
-        "ad_dayofweek": float(ad_dayofweek), "car_age": float(car_age),
-    }], columns=feature_columns)
-    try:
-        prediction = float(model.predict(input_data)[0])
-        st.markdown('<div class="result-heading"><h2>Estimated selling price</h2></div>', unsafe_allow_html=True)
+    if submitted:
+        input_data = pd.DataFrame([{
+            "fuel_type": fuel_type, "kms_run": int(kms_run), "city": city,
+            "body_type": body_type, "transmission": transmission, "variant": variant,
+            "assured_buy": int(assured_buy), "registered_city": registered_city,
+            "registered_state": registered_state, "rto": rto, "source": source,
+            "make": make, "model": model_name, "total_owners": int(total_owners),
+            "fitness_certificate": float(fitness_certificate), "warranty_avail": int(warranty_avail),
+            "ad_year": float(ad_year), "ad_month": float(ad_month),
+            "ad_dayofweek": float(ad_dayofweek), "car_age": float(car_age),
+        }], columns=feature_columns)
+        try:
+            st.session_state["last_prediction"] = float(model.predict(input_data)[0])
+            st.session_state["last_input_data"] = input_data
+            st.session_state["last_prediction_error"] = None
+        except Exception as exc:
+            st.session_state["last_prediction_error"] = str(exc)
+
+with right_panel:
+    st.markdown('<div class="estimate-card"><div class="estimate-eyebrow">YOUR ESTIMATE</div>', unsafe_allow_html=True)
+    if st.session_state.get("last_prediction_error"):
+        st.error("Prediction failed. Check that the saved model is compatible with the installed scikit-learn version.")
+        st.caption(st.session_state["last_prediction_error"])
+    elif "last_prediction" in st.session_state:
+        prediction = st.session_state["last_prediction"]
         if prediction < 0:
             st.warning("The model returned a negative estimate. Review the inputs and training data before interpreting this result.")
         else:
-            left, right = st.columns([2, 1])
-            with left:
-                st.markdown(f'<div class="result-panel"><div class="result-label">Predicted vehicle value</div><div class="result-price">₹{prediction:,.0f}</div><div class="result-sub">Estimated resale price</div></div>', unsafe_allow_html=True)
-            with right:
-                st.metric("Model test R²", "90.58%")
-                st.caption("Recorded test-set score")
-            with st.expander("Review vehicle details used for prediction"):
-                review = input_data.copy()
+            st.markdown(f'<div class="estimate-price">₹{prediction:,.0f}</div><div class="estimate-pill">Model estimate</div><p class="estimate-note">A point estimate from the trained project model. It is not a guaranteed sale price or a confidence interval.</p><div class="estimate-divider"></div>', unsafe_allow_html=True)
+            last_input = st.session_state["last_input_data"]
+            last = last_input.iloc[0]
+            st.markdown(f"**{display_value(last['make'])} {display_value(last['model'])}** · {display_value(last['variant'])}")
+            st.caption(f"{int(last['kms_run']):,} km · {int(last['car_age'])} years old · {display_value(last['city'])}")
+            st.metric("Model test R²", "90.58%")
+            with st.expander("Review details used for prediction"):
+                review = last_input.copy()
                 for col in ["fuel_type", "city", "body_type", "transmission", "variant", "registered_city", "registered_state", "rto", "source", "make", "model"]:
                     review[col] = review[col].map(lambda value: display_value(value, col))
                 st.dataframe(review, use_container_width=True, hide_index=True)
-    except Exception as exc:
-        st.error("Prediction failed. Check that the saved model is compatible with the installed scikit-learn version.")
-        st.exception(exc)
+    else:
+        st.markdown('<div class="estimate-placeholder">Your estimated resale value will appear here.</div><div class="estimate-divider"></div><p class="estimate-note">Complete the vehicle and listing details, then select <b>Calculate estimated value</b>.</p>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
 st.markdown('<div class="footer-line">Used Vehicle Price Valuation · Machine-learning powered estimate</div>', unsafe_allow_html=True)
